@@ -16,6 +16,19 @@ export interface Source {
   source_type: string;
   url_or_path?: string;
   status: string;
+  /** True when the original upload is retained and can be opened. */
+  has_file: boolean;
+  original_filename?: string;
+  file_size?: number;
+}
+
+/**
+ * URL of a source's stored original.
+ *
+ * Addressed by source id, not by blob hash — the storage key stays server-side.
+ */
+export function sourceFileUrl(id: string): string {
+  return `/api/v1/sources/${id}/file`;
 }
 
 export interface SearchResult {

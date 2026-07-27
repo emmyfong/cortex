@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/emmyf/cortex/backend/internal/blob"
 	"github.com/emmyf/cortex/backend/internal/chunk"
 	"github.com/emmyf/cortex/backend/internal/config"
 	"github.com/emmyf/cortex/backend/internal/db"
@@ -92,8 +93,14 @@ func run() error {
 	publisher := events.NewPublisher(cfg.RedisAddr, logger)
 	defer publisher.Close()
 
+	blobs, err := blob.New(cfg.BlobDir, cfg.MaxUploadBytes)
+	if err != nil {
+		return fmt.Errorf("open blob store: %w", err)
+	}
+
 	handler := ingest.NewHandler(
 		store.New(pool),
+		blobs,
 		parse.NewWebParser(cfg.MaxFetchBytes),
 		pdfParser,
 		embed.New(cfg.OllamaURL, cfg.EmbeddingModel),

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 
+	"github.com/emmyf/cortex/backend/internal/blob"
 	"github.com/emmyf/cortex/backend/internal/chunk"
 	"github.com/emmyf/cortex/backend/internal/embed"
 	"github.com/emmyf/cortex/backend/internal/events"
@@ -28,6 +28,7 @@ const (
 // Handler runs the ingestion pipeline for one source.
 type Handler struct {
 	store     *store.Store
+	blobs     *blob.Store
 	web       *parse.WebParser
 	pdf       *parse.PDFParser
 	embedder  *embed.Client
@@ -38,6 +39,7 @@ type Handler struct {
 
 func NewHandler(
 	st *store.Store,
+	blobs *blob.Store,
 	web *parse.WebParser,
 	pdf *parse.PDFParser,
 	embedder *embed.Client,
@@ -46,7 +48,7 @@ func NewHandler(
 	logger *slog.Logger,
 ) *Handler {
 	return &Handler{
-		store: st, web: web, pdf: pdf,
+		store: st, blobs: blobs, web: web, pdf: pdf,
 		embedder: embedder, splitter: splitter,
 		publisher: publisher, logger: logger,
 	}
@@ -60,16 +62,8 @@ func (h *Handler) ProcessTask(ctx context.Context, task *asynq.Task) error {
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 
-	// Uploaded files are temporary regardless of outcome.
-	if payload.CleanupPath != "" {
-		defer func() {
-			if err := os.Remove(payload.CleanupPath); err != nil && !os.IsNotExist(err) {
-				h.logger.Warn("could not remove upload",
-					slog.String("path", payload.CleanupPath),
-					slog.String("error", err.Error()))
-			}
-		}()
-	}
+	// The uploaded original is deliberately kept: it is the stored file the
+	// user can reopen. Only the source row's deletion removes it.
 
 	if err := h.run(ctx, payload); err != nil {
 		h.fail(ctx, payload, err)
@@ -153,11 +147,46 @@ func (h *Handler) parseSource(ctx context.Context, p Payload) (parse.Document, e
 	switch p.SourceType {
 	case store.TypeWeb:
 		return h.web.Parse(ctx, p.Ref)
+
 	case store.TypePDF:
-		return h.pdf.Parse(ctx, p.Ref)
+		if p.BlobHash == "" {
+			return parse.Document{}, fmt.Errorf("%w: pdf payload has no blob hash", asynq.SkipRetry)
+		}
+		hash, err := blob.HexToHash(p.BlobHash)
+		if err != nil {
+			return parse.Document{}, fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+		}
+		// pdftotext reads the stored blob in place; it is never modified or
+		// removed here.
+		path, err := h.blobs.Path(hash)
+		if err != nil {
+			return parse.Document{}, fmt.Errorf("locate stored upload: %w", err)
+		}
+		return h.pdf.Parse(ctx, path)
+
 	default:
 		return parse.Document{}, fmt.Errorf("%w: unsupported source type %q", asynq.SkipRetry, p.SourceType)
 	}
+}
+
+// userFacingError renders a failure for the person who uploaded the document.
+//
+// Errors marked non-retryable are wrapped with asynq.SkipRetry, which prefixes
+// the message with "skip retry for the task: ". That is queue plumbing and
+// means nothing to a user staring at a failed upload, so it is stripped before
+// the message is stored or streamed.
+func userFacingError(err error) string {
+	message := err.Error()
+
+	if prefix := asynq.SkipRetry.Error() + ": "; strings.HasPrefix(message, prefix) {
+		message = strings.TrimPrefix(message, prefix)
+	}
+	if message == "" {
+		return "ingestion failed"
+	}
+
+	// Capitalise the first letter so the message reads as a sentence in the UI.
+	return strings.ToUpper(message[:1]) + message[1:]
 }
 
 // report records progress durably and pushes it to any live SSE listener.
@@ -183,7 +212,7 @@ func (h *Handler) report(ctx context.Context, p Payload, stage string, progress 
 func (h *Handler) fail(taskCtx context.Context, p Payload, cause error) {
 	ctx := context.WithoutCancel(taskCtx)
 
-	message := cause.Error()
+	message := userFacingError(cause)
 	h.logger.Error("ingest failed",
 		slog.String("job_id", p.JobID),
 		slog.String("source_id", p.SourceID),

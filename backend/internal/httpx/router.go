@@ -50,6 +50,7 @@ func NewRouter(routes Routes, corsOrigin string, logger *slog.Logger) *chi.Mux {
 				timed.Post("/sources/url", routes.Sources.CreateFromURL())
 				timed.Post("/sources/upload", routes.Sources.CreateFromUpload())
 				timed.Get("/sources", routes.Sources.List())
+				timed.Get("/sources/{id}/file", routes.Sources.File())
 				timed.Delete("/sources/{id}", routes.Sources.Delete())
 			}
 			if routes.Search != nil {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { search, type SearchResult } from "@/lib/api";
+import { search, sourceFileUrl, type SearchResult } from "@/lib/api";
 
 type Phase = "idle" | "searching" | "done" | "error";
 
@@ -114,17 +114,38 @@ function ResultCard({ result }: { result: SearchResult }) {
         {truncate(result.content, 400)}
       </p>
 
-      {result.source_url?.startsWith("http") && (
-        <a
-          href={result.source_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 inline-block font-mono text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
-        >
-          source ↗
-        </a>
-      )}
+      <ResultSourceLink result={result} />
     </li>
+  );
+}
+
+/**
+ * Links a result back to where it came from — the live page for web sources,
+ * the stored original for uploads.
+ *
+ * Search results don't carry a has_file flag, so this offers the link for any
+ * PDF source. Sources ingested before originals were retained will 404, which
+ * the endpoint reports cleanly.
+ */
+function ResultSourceLink({ result }: { result: SearchResult }) {
+  const isWebLink = result.source_url?.startsWith("http");
+  const isStoredFile = result.source_type === "pdf";
+
+  if (!isWebLink && !isStoredFile) {
+    return null;
+  }
+
+  const href = isWebLink ? result.source_url! : sourceFileUrl(result.source_id);
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-2 inline-block font-mono text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+    >
+      {isWebLink ? "source ↗" : "open original ↗"}
+    </a>
   );
 }
 

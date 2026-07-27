@@ -18,6 +18,20 @@ type Source struct {
 	SourceType string `json:"source_type"`
 	URLOrPath  string `json:"url_or_path,omitempty"`
 	Status     string `json:"status"`
+
+	// HasFile tells the UI whether the original upload can be opened. The hash
+	// itself stays server-side — it is a storage key, not something a client
+	// needs, and exposing it would invite direct blob addressing.
+	HasFile          bool   `json:"has_file"`
+	OriginalFilename string `json:"original_filename,omitempty"`
+	FileSize         int64  `json:"file_size,omitempty"`
+}
+
+// FileRef locates a source's stored original.
+type FileRef struct {
+	Hash     []byte
+	Size     int64
+	Filename string
 }
 
 // CreateSource inserts a pending source. Content arrives later: the row must
@@ -96,7 +110,8 @@ func (s *Store) GetSource(ctx context.Context, id string) (Source, error) {
 // ListSources returns recently ingested sources, newest first.
 func (s *Store) ListSources(ctx context.Context, limit int) ([]Source, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, title, source_type, COALESCE(url_or_path, ''), status
+		`SELECT id, title, source_type, COALESCE(url_or_path, ''), status,
+		        file_hash IS NOT NULL, COALESCE(original_filename, ''), COALESCE(file_size, 0)
 		 FROM sources ORDER BY created_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list sources: %w", err)
@@ -106,7 +121,8 @@ func (s *Store) ListSources(ctx context.Context, limit int) ([]Source, error) {
 	var sources []Source
 	for rows.Next() {
 		var src Source
-		if err := rows.Scan(&src.ID, &src.Title, &src.SourceType, &src.URLOrPath, &src.Status); err != nil {
+		if err := rows.Scan(&src.ID, &src.Title, &src.SourceType, &src.URLOrPath, &src.Status,
+			&src.HasFile, &src.OriginalFilename, &src.FileSize); err != nil {
 			return nil, fmt.Errorf("scan source: %w", err)
 		}
 		sources = append(sources, src)
@@ -114,14 +130,81 @@ func (s *Store) ListSources(ctx context.Context, limit int) ([]Source, error) {
 	return sources, rows.Err()
 }
 
-// DeleteSource removes a source; chunks and mentions cascade.
-func (s *Store) DeleteSource(ctx context.Context, id string) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM sources WHERE id = $1`, id)
+// AttachFile records the stored original for a source.
+func (s *Store) AttachFile(ctx context.Context, id string, hash []byte, size int64, filename string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE sources SET file_hash = $2, file_size = $3, original_filename = NULLIF($4, '')
+		 WHERE id = $1`, id, hash, size, filename)
 	if err != nil {
-		return fmt.Errorf("delete source: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("source %s not found", id)
+		return fmt.Errorf("attach file to source: %w", err)
 	}
 	return nil
+}
+
+// GetFileRef returns a source's stored original, or ErrNoFile if it has none.
+func (s *Store) GetFileRef(ctx context.Context, id string) (FileRef, error) {
+	var (
+		ref      FileRef
+		hash     []byte
+		size     *int64
+		filename *string
+	)
+
+	err := s.pool.QueryRow(ctx,
+		`SELECT file_hash, file_size, original_filename FROM sources WHERE id = $1`, id).
+		Scan(&hash, &size, &filename)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return FileRef{}, fmt.Errorf("source %s not found", id)
+	}
+	if err != nil {
+		return FileRef{}, fmt.Errorf("get file reference: %w", err)
+	}
+	if hash == nil {
+		return FileRef{}, ErrNoFile
+	}
+
+	ref.Hash = hash
+	if size != nil {
+		ref.Size = *size
+	}
+	if filename != nil {
+		ref.Filename = *filename
+	}
+	return ref, nil
+}
+
+// ErrNoFile means the source has no stored original — the normal case for web
+// sources, which are identified by URL instead.
+var ErrNoFile = errors.New("source has no stored file")
+
+// DeleteSource removes a source and reports the blob it referenced, if any.
+//
+// The hash is returned rather than deleted here because the blob is
+// content-addressed and may be shared with other sources; the caller decides
+// whether it is still referenced. Callers that ignore the return value simply
+// leak a file, never corrupt a live one.
+func (s *Store) DeleteSource(ctx context.Context, id string) ([]byte, error) {
+	var hash []byte
+
+	err := s.pool.QueryRow(ctx,
+		`DELETE FROM sources WHERE id = $1 RETURNING file_hash`, id).Scan(&hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("source %s not found", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("delete source: %w", err)
+	}
+	return hash, nil
+}
+
+// IsBlobReferenced reports whether any source still points at a blob. Deleting
+// a shared blob would silently break every other source using it.
+func (s *Store) IsBlobReferenced(ctx context.Context, hash []byte) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM sources WHERE file_hash = $1)`, hash).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check blob references: %w", err)
+	}
+	return exists, nil
 }

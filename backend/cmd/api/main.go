@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/emmyf/cortex/backend/internal/blob"
 	"github.com/emmyf/cortex/backend/internal/config"
 	"github.com/emmyf/cortex/backend/internal/db"
 	"github.com/emmyf/cortex/backend/internal/embed"
@@ -52,6 +52,12 @@ func run() error {
 
 	st := store.New(pool)
 
+	blobs, err := blob.New(cfg.BlobDir, cfg.MaxUploadBytes)
+	if err != nil {
+		return fmt.Errorf("open blob store: %w", err)
+	}
+	logger.Info("blob store ready", slog.String("dir", cfg.BlobDir))
+
 	queueClient := queue.NewClient(cfg.RedisAddr)
 	defer queueClient.Close()
 
@@ -69,9 +75,9 @@ func run() error {
 		},
 		Sources: &httpx.SourceHandler{
 			Store:          st,
+			Blobs:          blobs,
 			Queue:          queueClient,
 			Logger:         logger,
-			UploadDir:      filepath.Join(os.TempDir(), "cortex-uploads"),
 			MaxUploadBytes: cfg.MaxUploadBytes,
 		},
 		Search: &httpx.SearchHandler{

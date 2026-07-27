@@ -16,18 +16,19 @@ type Payload struct {
 	JobID    string `json:"job_id"`
 	SourceID string `json:"source_id"`
 
-	// SourceType selects the parser: "web" reads Ref as a URL, "pdf" reads it
-	// as a path to a temp file the API wrote.
+	// SourceType selects the parser. "web" reads Ref as a URL; "pdf" reads
+	// BlobHash as the key of a stored original.
 	SourceType string `json:"source_type"`
-	Ref        string `json:"ref"`
+	Ref        string `json:"ref,omitempty"`
+
+	// BlobHash is the hex-encoded key of the stored upload. The worker reads
+	// the blob and leaves it in place — it is the retained original, not a
+	// temp file to consume.
+	BlobHash string `json:"blob_hash,omitempty"`
 
 	// TitleHint is used when the parser cannot determine a title, e.g. the
 	// original filename of an uploaded PDF.
 	TitleHint string `json:"title_hint,omitempty"`
-
-	// CleanupPath, when set, is deleted once processing finishes. Uploaded
-	// files must not accumulate on disk.
-	CleanupPath string `json:"cleanup_path,omitempty"`
 }
 
 // NewTask builds the queue task for a payload.

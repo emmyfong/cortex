@@ -1,7 +1,36 @@
 "use client";
 
-import { deleteSource, type Source } from "@/lib/api";
+import { deleteSource, sourceFileUrl, type Source } from "@/lib/api";
 import { useState } from "react";
+
+/**
+ * Links to the original document: the stored PDF for uploads, the live page for
+ * web sources. Renders nothing when neither exists.
+ */
+function SourceOriginalLink({ source }: { source: Source }) {
+  const isWebLink = source.url_or_path?.startsWith("http");
+
+  if (!source.has_file && !isWebLink) {
+    return null;
+  }
+
+  const href = source.has_file ? sourceFileUrl(source.id) : source.url_or_path!;
+  const label = source.has_file ? "original" : "visit";
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open the original of ${source.title}`}
+      className="shrink-0 rounded px-2 py-1 font-mono text-xs text-neutral-500
+                 transition-colors hover:bg-neutral-500/10 hover:text-neutral-900
+                 dark:hover:text-neutral-100"
+    >
+      {label} ↗
+    </a>
+  );
+}
 
 interface SourceListProps {
   sources: Source[];
@@ -51,12 +80,14 @@ export function SourceList({ sources, onChanged }: SourceListProps) {
 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm">{source.title}</p>
-                {source.url_or_path?.startsWith("http") && (
-                  <p className="truncate font-mono text-xs text-neutral-500">
-                    {source.url_or_path}
-                  </p>
-                )}
+                <p className="truncate font-mono text-xs text-neutral-500">
+                  {source.url_or_path?.startsWith("http")
+                    ? source.url_or_path
+                    : source.original_filename ?? ""}
+                </p>
               </div>
+
+              <SourceOriginalLink source={source} />
 
               <span
                 className={`shrink-0 font-mono text-xs ${

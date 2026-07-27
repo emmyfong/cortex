@@ -125,6 +125,7 @@ browser that reconnects mid-ingest replays current state rather than hanging.
 | `POST /api/v1/sources/url` | Ingest a web page. Body: `{"url": "..."}` |
 | `POST /api/v1/sources/upload` | Ingest a PDF. Multipart field `file` |
 | `GET /api/v1/sources` | List ingested sources |
+| `GET /api/v1/sources/{id}/file` | Download the stored original (uploads only) |
 | `DELETE /api/v1/sources/{id}` | Delete a source and its chunks |
 | `GET /api/v1/jobs/{id}/stream` | SSE progress for one job |
 | `POST /api/v1/search` | Semantic search. Body: `{"query": "...", "k": 5}` |
@@ -149,6 +150,31 @@ shape of PDF-extracted prose) would otherwise become one useless chunk.
 `CHUNK_MAX_TOKENS` and `CHUNK_OVERLAP_TOKENS` are the main levers on search
 quality. See `.env.example` for what they mean. Changing them requires a
 re-ingest.
+
+### Stored originals
+
+Uploaded files are kept, not discarded after extraction. `GET /api/v1/sources/{id}/file`
+serves the original PDF, and the UI links to it from both the source list and
+search results — so a passage can be read back in its original context.
+
+Storage is content-addressed under `BLOB_DIR`: the filename is the sha256 of the
+file's bytes, sharded two levels deep. Three consequences worth knowing:
+
+- **Identical uploads share one file.** Uploading the same PDF twice stores it once.
+- **A blob is deleted only when no source references it.** Deleting one of two
+  sources that share a file leaves the file in place.
+- **Paths are built from hex digits only**, so no client-supplied filename can
+  influence where bytes land — path traversal is impossible by construction
+  rather than by sanitising input.
+
+`BLOB_DIR` and the database are two halves of one dataset. **Back them up
+together**; restoring one without the other leaves rows pointing at missing
+files (the API reports that as a 404 rather than failing obscurely).
+
+Note `file_hash` and `content_hash` are different things: `file_hash` is the
+sha256 of the original bytes and addresses the blob, while `content_hash` is the
+sha256 of the *extracted markdown* and is what detects duplicate content across
+source types.
 
 ### PDF extraction
 
@@ -185,6 +211,9 @@ expects it.
 | `concept_mentions` | Links a concept to the chunk that produced it |
 | `jobs` | Durable ingestion job status |
 | `master_notes` | Co-authored synthesis notes |
+
+Uploads additionally carry `file_hash`, `file_size`, and `original_filename` on
+`sources`, pointing into the blob store described above.
 
 Three constraints are load-bearing and easy to break accidentally:
 

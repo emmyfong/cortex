@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -402,15 +403,92 @@ func TestListAndDeleteSources(t *testing.T) {
 		t.Fatalf("listed %d sources, want 2", len(sources))
 	}
 
-	if err := st.DeleteSource(ctx, first); err != nil {
+	// DeleteSource returns the blob hash the row referenced, so the caller can
+	// decide whether the file on disk is still needed.
+	hash, err := st.DeleteSource(ctx, first)
+	if err != nil {
 		t.Fatalf("DeleteSource: %v", err)
 	}
+	if hash != nil {
+		t.Errorf("hash = %x for a source with no file, want nil", hash)
+	}
+
 	sources, _ = st.ListSources(ctx, 10)
 	if len(sources) != 1 {
 		t.Errorf("after delete, listed %d sources, want 1", len(sources))
 	}
 
-	if err := st.DeleteSource(ctx, first); err == nil {
+	if _, err := st.DeleteSource(ctx, first); err == nil {
 		t.Error("deleting a missing source returned nil, want an error")
+	}
+}
+
+func TestFileAttachmentLifecycle(t *testing.T) {
+	st := requireStore(t)
+	ctx := context.Background()
+
+	hash := bytes.Repeat([]byte{0xAB}, 32)
+
+	id, _ := st.CreateSource(ctx, "Paper", store.TypePDF, "")
+
+	// A source with no attached file must report that clearly, not return a
+	// zero-valued reference that looks real.
+	if _, err := st.GetFileRef(ctx, id); !errors.Is(err, store.ErrNoFile) {
+		t.Errorf("GetFileRef before attach = %v, want ErrNoFile", err)
+	}
+
+	if err := st.AttachFile(ctx, id, hash, 2048, "paper.pdf"); err != nil {
+		t.Fatalf("AttachFile: %v", err)
+	}
+
+	ref, err := st.GetFileRef(ctx, id)
+	if err != nil {
+		t.Fatalf("GetFileRef: %v", err)
+	}
+	if !bytes.Equal(ref.Hash, hash) {
+		t.Errorf("hash = %x, want %x", ref.Hash, hash)
+	}
+	if ref.Size != 2048 || ref.Filename != "paper.pdf" {
+		t.Errorf("ref = %+v, want size 2048 and filename paper.pdf", ref)
+	}
+
+	sources, _ := st.ListSources(ctx, 10)
+	if len(sources) != 1 || !sources[0].HasFile {
+		t.Errorf("ListSources did not report HasFile: %+v", sources)
+	}
+}
+
+// Blobs are content-addressed and therefore shared. Deleting one source must
+// not orphan a file another source still points at.
+func TestIsBlobReferencedTracksSharing(t *testing.T) {
+	st := requireStore(t)
+	ctx := context.Background()
+
+	hash := bytes.Repeat([]byte{0xCD}, 32)
+
+	first, _ := st.CreateSource(ctx, "Copy A", store.TypePDF, "")
+	second, _ := st.CreateSource(ctx, "Copy B", store.TypePDF, "")
+	_ = st.AttachFile(ctx, first, hash, 100, "a.pdf")
+	_ = st.AttachFile(ctx, second, hash, 100, "b.pdf")
+
+	if _, err := st.DeleteSource(ctx, first); err != nil {
+		t.Fatalf("delete first: %v", err)
+	}
+
+	referenced, err := st.IsBlobReferenced(ctx, hash)
+	if err != nil {
+		t.Fatalf("IsBlobReferenced: %v", err)
+	}
+	if !referenced {
+		t.Error("blob reported unreferenced while a second source still uses it")
+	}
+
+	if _, err := st.DeleteSource(ctx, second); err != nil {
+		t.Fatalf("delete second: %v", err)
+	}
+
+	referenced, _ = st.IsBlobReferenced(ctx, hash)
+	if referenced {
+		t.Error("blob still reported referenced after every source was deleted")
 	}
 }

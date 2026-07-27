@@ -32,6 +32,10 @@ Thumbs.db
 *.swp
 
 # ---- Local data ----
+# Stored originals of ingested documents. Personal material, often large —
+# never commit it. Back this directory up alongside the database instead.
+/backend/data/
+/data/
 *.log
 /tmp/
 /uploads/

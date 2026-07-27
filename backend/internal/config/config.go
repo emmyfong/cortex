@@ -43,6 +43,11 @@ type Config struct {
 	MaxUploadBytes int64  `env:"MAX_UPLOAD_BYTES" envDefault:"52428800"` // 50 MiB
 	MaxFetchBytes  int64  `env:"MAX_FETCH_BYTES" envDefault:"10485760"`  // 10 MiB
 
+	// Blob store. Original uploads are kept here so a source can be reopened
+	// as it was received, not only as extracted text. Back this directory up
+	// alongside the database — neither is complete without the other.
+	BlobDir string `env:"BLOB_DIR" envDefault:"./data/blobs"`
+
 	// Search.
 	SearchDefaultK int `env:"SEARCH_DEFAULT_K" envDefault:"5"`
 	SearchMaxK     int `env:"SEARCH_MAX_K" envDefault:"50"`
