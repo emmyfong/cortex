@@ -1,0 +1,33 @@
+{
+  "name": "cortex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first knowledge graph and RAG system",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "infra:nuke": "docker compose down -v",
+    "infra:logs": "docker compose logs -f",
+    "db:migrate": "npm run go -- run ./cmd/migrate up",
+    "db:rollback": "npm run go -- run ./cmd/migrate down",
+    "db:status": "npm run go -- run ./cmd/migrate status",
+    "db:reset": "npm run infra:nuke && npm run infra:up && npm run db:migrate",
+    "db:psql": "docker compose exec postgres psql -U cortex -d cortex",
+    "go": "cd backend && go",
+    "api": "npm run go -- run ./cmd/api",
+    "worker": "npm run go -- run ./cmd/worker",
+    "web": "npm --prefix web run dev",
+    "dev": "npm run infra:up && npm run db:migrate && node scripts/dev.mjs",
+    "build": "npm run go -- build ./... && npm --prefix web run build",
+    "test": "npm run go -- test ./...",
+    "test:short": "npm run go -- test -short ./...",
+    "test:cover": "npm run go -- test -cover ./...",
+    "test:race": "npm run go -- test -race ./...",
+    "lint": "npm run go -- vet ./... && npm --prefix web run lint",
+    "fmt": "npm run go -- fmt ./..."
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

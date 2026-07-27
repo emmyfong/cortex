@@ -1,0 +1,48 @@
+# Datastores only. The Go services and Next.js run natively on the host,
+# so everything addresses localhost — no host.docker.internal indirection.
+#
+# Credentials come from .env (gitignored). The `:?` syntax makes compose fail
+# loudly if a variable is missing rather than silently starting Postgres with
+# a default password.
+#
+# Ports bind to 127.0.0.1 explicitly: the plain "5432:5432" form binds 0.0.0.0
+# and would expose the database to your whole network.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: cortex-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required — copy .env.example to .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — copy .env.example to .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required — copy .env.example to .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: cortex-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

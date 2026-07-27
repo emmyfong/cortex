@@ -1,0 +1,37 @@
+# ---- Secrets / local config ----
+# Never commit real environment files. Only .env.example is tracked.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Go ----
+/backend/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# ---- Node / Next.js ----
+node_modules/
+/web/.next/
+/web/out/
+/web/build/
+/web/next-env.d.ts
+.npm
+*.tsbuildinfo
+
+# ---- Editors / OS ----
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# ---- Local data ----
+*.log
+/tmp/
+/uploads/
