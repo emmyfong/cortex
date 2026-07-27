@@ -4,9 +4,9 @@ Local-first knowledge graph and RAG system. Ingests documents, chunks them
 semantically, embeds them locally, and builds a connected graph of concepts
 without manual tagging.
 
-**Status: Milestone 1 — infrastructure and schema.** The datastores, database
-schema, service scaffolds, and dev loop are in place. The ingestion pipeline,
-search, and graph arrive in later milestones.
+**Status: Milestone 2 — ingestion and semantic search.** Web pages and PDFs can
+be ingested, chunked, embedded locally, and searched by meaning. The concept
+graph and synthesis notes arrive in M3.
 
 ## Prerequisites
 
@@ -92,6 +92,83 @@ never baked into a client bundle.
 Requires a C compiler (`gcc`), which the Go race detector depends on and which
 is not installed by default on Windows. Install mingw-w64 (`winget install
 BrechtSanders.WinLibs.POSIX.UCRT`) to enable it. `npm test` works without it.
+
+## How ingestion works
+
+```
+POST /api/v1/sources/url        →  202 Accepted { job_id, source_id }
+POST /api/v1/sources/upload     →  202 Accepted { job_id, source_id }
+        │
+        ├─ source + job rows written to Postgres
+        └─ task pushed to Redis (asynq)
+                │
+        Go worker picks it up:
+                ├─ 1. Parse    web → go-readability → markdown
+                │              pdf → pdftotext → markdown
+                ├─ 2. Clean    strip citations and boilerplate
+                ├─ 3. Chunk    split on headings, then paragraphs, with overlap
+                ├─ 4. Embed    Ollama nomic-embed-text, batched, 768-dim
+                └─ 5. Store    chunks + vectors in one transaction
+
+GET /api/v1/jobs/{id}/stream    →  live SSE progress
+POST /api/v1/search             →  ranked passages by cosine similarity
+```
+
+Progress crosses the process boundary over Redis pub/sub, because the worker and
+the API are separate processes. The `jobs` table is the durable record, so a
+browser that reconnects mid-ingest replays current state rather than hanging.
+
+### API
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/sources/url` | Ingest a web page. Body: `{"url": "..."}` |
+| `POST /api/v1/sources/upload` | Ingest a PDF. Multipart field `file` |
+| `GET /api/v1/sources` | List ingested sources |
+| `DELETE /api/v1/sources/{id}` | Delete a source and its chunks |
+| `GET /api/v1/jobs/{id}/stream` | SSE progress for one job |
+| `POST /api/v1/search` | Semantic search. Body: `{"query": "...", "k": 5}` |
+
+```bash
+curl -X POST localhost:8080/api/v1/sources/url \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://en.wikipedia.org/wiki/Lithium-ion_battery"}'
+
+curl -X POST localhost:8080/api/v1/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"why do batteries lose capacity as they age?","k":5}'
+```
+
+### Chunking
+
+Documents are split on markdown headings first, so a chunk is one coherent
+section. A section over the token budget is split again on paragraphs, then
+sentences, then words — a wall of text with no paragraph breaks (the normal
+shape of PDF-extracted prose) would otherwise become one useless chunk.
+
+`CHUNK_MAX_TOKENS` and `CHUNK_OVERLAP_TOKENS` are the main levers on search
+quality. See `.env.example` for what they mean. Changing them requires a
+re-ingest.
+
+### PDF extraction
+
+PDFs are extracted with `pdftotext`, not a Go library. Pure-Go extractors were
+evaluated and rejected: they return text with all inter-word spacing lost
+(`Providedproperattributionisprovided...`), because PDF stores glyphs at
+coordinates rather than as words. That would destroy embeddings and search.
+
+`pdftotext` ships with Git for Windows. If it is missing, the worker logs a
+warning at startup and web ingestion continues to work.
+
+### Security notes
+
+The web parser fetches caller-supplied URLs, which is an SSRF surface. Requests
+are guarded at dial time by inspecting the resolved IP on every connection and
+rejecting loopback, private, link-local (including the cloud metadata endpoint),
+and other non-public space. Checking the hostname up front would not be enough:
+DNS rebinding and redirects both defeat it, whereas the dial-time check runs on
+every hop. Uploads are verified by magic bytes rather than by extension or
+Content-Type, and are written to generated filenames.
 
 ## Database
 

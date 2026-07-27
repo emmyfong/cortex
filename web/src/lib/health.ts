@@ -28,7 +28,7 @@ export async function fetchReadiness(signal?: AbortSignal): Promise<ReadyRespons
   const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
-  const response = await fetch("/api/readyz", {
+  const response = await fetch("/readyz", {
     signal: combined,
     cache: "no-store",
   });

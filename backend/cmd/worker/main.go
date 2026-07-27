@@ -15,11 +15,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/emmyf/cortex/backend/internal/chunk"
 	"github.com/emmyf/cortex/backend/internal/config"
 	"github.com/emmyf/cortex/backend/internal/db"
+	"github.com/emmyf/cortex/backend/internal/embed"
+	"github.com/emmyf/cortex/backend/internal/events"
 	"github.com/emmyf/cortex/backend/internal/httpx"
+	"github.com/emmyf/cortex/backend/internal/ingest"
 	"github.com/emmyf/cortex/backend/internal/logging"
+	"github.com/emmyf/cortex/backend/internal/parse"
 	"github.com/emmyf/cortex/backend/internal/queue"
+	"github.com/emmyf/cortex/backend/internal/store"
 )
 
 const shutdownTimeout = 15 * time.Second
@@ -69,9 +75,36 @@ func run() error {
 		}
 	}()
 
+	// Fail at startup if PDF extraction is unavailable, rather than at the
+	// first upload. A warning, not an error: web ingestion still works.
+	pdfParser := parse.NewPDFParser(cfg.PDFToTextPath)
+	if err := pdfParser.Available(); err != nil {
+		logger.Warn("PDF ingestion unavailable", slog.String("error", err.Error()))
+	} else {
+		logger.Info("pdf extraction ready", slog.String("binary", cfg.PDFToTextPath))
+	}
+
+	splitter, err := chunk.NewSplitter(cfg.ChunkMaxTokens, cfg.ChunkOverlap)
+	if err != nil {
+		return fmt.Errorf("configure chunker: %w", err)
+	}
+
+	publisher := events.NewPublisher(cfg.RedisAddr, logger)
+	defer publisher.Close()
+
+	handler := ingest.NewHandler(
+		store.New(pool),
+		parse.NewWebParser(cfg.MaxFetchBytes),
+		pdfParser,
+		embed.New(cfg.OllamaURL, cfg.EmbeddingModel),
+		splitter,
+		publisher,
+		logger,
+	)
+
 	srv := queue.NewServer(cfg.RedisAddr)
 	mux := queue.NewMux()
-	// M2: mux.Handle(tasks.TypeIngestSource, handler.HandleIngest)
+	mux.HandleFunc(ingest.TypeIngestSource, handler.ProcessTask)
 
 	runErr := make(chan error, 1)
 	go func() {

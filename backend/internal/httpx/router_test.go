@@ -9,12 +9,14 @@ import (
 const allowedOrigin = "http://localhost:3000"
 
 func testRouter() http.Handler {
-	checker := &Checker{
-		RedisAddr: "127.0.0.1:1",
-		OllamaURL: "http://127.0.0.1:1",
-		Logger:    discardLogger(),
+	routes := Routes{
+		Checker: &Checker{
+			RedisAddr: "127.0.0.1:1",
+			OllamaURL: "http://127.0.0.1:1",
+			Logger:    discardLogger(),
+		},
 	}
-	return NewRouter(checker, allowedOrigin, discardLogger())
+	return NewRouter(routes, allowedOrigin, discardLogger())
 }
 
 // CORS must not echo back whatever Origin the caller sends — that would defeat

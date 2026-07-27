@@ -31,6 +31,21 @@ type Config struct {
 	WorkerHealthPort int    `env:"WORKER_HEALTH_PORT" envDefault:"8081"`
 	LogLevel         string `env:"LOG_LEVEL" envDefault:"info"`
 	CORSOrigin       string `env:"CORS_ORIGIN" envDefault:"http://localhost:3000"`
+
+	// Chunking. These are the single biggest lever on retrieval quality and
+	// cannot be tuned correctly before searching real content, so they are
+	// configuration rather than constants. Changing them requires a re-ingest.
+	ChunkMaxTokens int `env:"CHUNK_MAX_TOKENS" envDefault:"600"`
+	ChunkOverlap   int `env:"CHUNK_OVERLAP_TOKENS" envDefault:"50"`
+
+	// Ingestion.
+	PDFToTextPath  string `env:"PDFTOTEXT_PATH" envDefault:"pdftotext"`
+	MaxUploadBytes int64  `env:"MAX_UPLOAD_BYTES" envDefault:"52428800"` // 50 MiB
+	MaxFetchBytes  int64  `env:"MAX_FETCH_BYTES" envDefault:"10485760"`  // 10 MiB
+
+	// Search.
+	SearchDefaultK int `env:"SEARCH_DEFAULT_K" envDefault:"5"`
+	SearchMaxK     int `env:"SEARCH_MAX_K" envDefault:"50"`
 }
 
 // Load reads .env (if present) then parses the environment. Real environment
@@ -101,6 +116,24 @@ func (c Config) validate() error {
 	}
 	if c.WorkerHealthPort < 1 || c.WorkerHealthPort > 65535 {
 		errs = append(errs, fmt.Errorf("WORKER_HEALTH_PORT out of range: %d", c.WorkerHealthPort))
+	}
+	if c.ChunkMaxTokens < 1 {
+		errs = append(errs, fmt.Errorf("CHUNK_MAX_TOKENS must be positive, got %d", c.ChunkMaxTokens))
+	}
+	if c.ChunkOverlap < 0 {
+		errs = append(errs, fmt.Errorf("CHUNK_OVERLAP_TOKENS cannot be negative, got %d", c.ChunkOverlap))
+	}
+	// Overlap at or above chunk size means each chunk re-emits everything the
+	// previous one held, so the splitter would never advance.
+	if c.ChunkOverlap >= c.ChunkMaxTokens {
+		errs = append(errs, fmt.Errorf(
+			"CHUNK_OVERLAP_TOKENS (%d) must be less than CHUNK_MAX_TOKENS (%d)",
+			c.ChunkOverlap, c.ChunkMaxTokens))
+	}
+	if c.SearchDefaultK < 1 || c.SearchDefaultK > c.SearchMaxK {
+		errs = append(errs, fmt.Errorf(
+			"SEARCH_DEFAULT_K (%d) must be between 1 and SEARCH_MAX_K (%d)",
+			c.SearchDefaultK, c.SearchMaxK))
 	}
 
 	return errors.Join(errs...)
