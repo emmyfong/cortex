@@ -1,0 +1,21 @@
+# Normalize line endings so they do not depend on each machine's git config.
+#
+# Git for Windows ships with core.autocrlf=true, which converts to CRLF on
+# checkout. That is harmless for Go and Node, but a shell script checked out
+# with CRLF fails inside a Linux container with "bad interpreter: no such file
+# or directory" — a real hazard here since Postgres and Redis run in Docker.
+#
+# eol=lf pins the working copy to LF regardless of autocrlf.
+* text=auto eol=lf
+
+# Files that must keep LF even though the extension is ambiguous.
+*.sh text eol=lf
+*.sql text eol=lf
+*.svg text eol=lf
+
+# Binary: never touch these.
+*.ico binary
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.pdf binary
