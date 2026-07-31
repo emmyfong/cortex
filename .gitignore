@@ -39,3 +39,10 @@ Thumbs.db
 *.log
 /tmp/
 /uploads/
+
+# Test output
+/backend/coverage.out
+/web/test-results/
+/web/playwright-report/
+/web/blob-report/
+/web/.playwright/

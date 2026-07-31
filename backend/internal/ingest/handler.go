@@ -25,12 +25,23 @@ const (
 	progressStoring   = 90
 )
 
+// DocumentParser turns a reference — a URL or a file path — into markdown.
+//
+// An interface rather than the concrete parsers so a test can substitute a
+// stub. The alternative would be relaxing the web parser's SSRF guard to let
+// tests reach a loopback server, which would weaken a real protection for the
+// convenience of the test suite.
+type DocumentParser interface {
+	Parse(ctx context.Context, ref string) (parse.Document, error)
+}
+
 // Handler runs the ingestion pipeline for one source.
 type Handler struct {
 	store     *store.Store
 	blobs     *blob.Store
-	web       *parse.WebParser
-	pdf       *parse.PDFParser
+	queue     *asynq.Client
+	web       DocumentParser
+	pdf       DocumentParser
 	embedder  *embed.Client
 	splitter  *chunk.Splitter
 	publisher *events.Publisher
@@ -40,15 +51,16 @@ type Handler struct {
 func NewHandler(
 	st *store.Store,
 	blobs *blob.Store,
-	web *parse.WebParser,
-	pdf *parse.PDFParser,
+	queue *asynq.Client,
+	web DocumentParser,
+	pdf DocumentParser,
 	embedder *embed.Client,
 	splitter *chunk.Splitter,
 	publisher *events.Publisher,
 	logger *slog.Logger,
 ) *Handler {
 	return &Handler{
-		store: st, blobs: blobs, web: web, pdf: pdf,
+		store: st, blobs: blobs, queue: queue, web: web, pdf: pdf,
 		embedder: embedder, splitter: splitter,
 		publisher: publisher, logger: logger,
 	}
@@ -140,7 +152,41 @@ func (h *Handler) run(ctx context.Context, p Payload) error {
 		slog.String("source_id", p.SourceID),
 		slog.String("title", title),
 		slog.Int("chunks", len(chunks)))
+
+	h.queueExtraction(ctx, p.SourceID)
 	return nil
+}
+
+// queueExtraction hands the document off for graph building.
+//
+// Failures here are logged, never returned: the ingestion itself succeeded and
+// the document is searchable. Reporting the job as failed because a follow-up
+// could not be queued would be a lie about work that did complete.
+func (h *Handler) queueExtraction(ctx context.Context, sourceID string) {
+	if h.queue == nil {
+		return // extraction disabled
+	}
+
+	jobID, err := h.store.CreateJob(ctx, sourceID)
+	if err != nil {
+		h.logger.Warn("could not create concept extraction job",
+			slog.String("source_id", sourceID), slog.String("error", err.Error()))
+		return
+	}
+
+	task, err := NewExtractTask(ExtractPayload{JobID: jobID, SourceID: sourceID})
+	if err == nil {
+		_, err = h.queue.EnqueueContext(ctx, task)
+	}
+	if err != nil {
+		h.logger.Warn("could not queue concept extraction",
+			slog.String("source_id", sourceID), slog.String("error", err.Error()))
+		_ = h.store.MarkJobFailed(ctx, jobID, "Could not queue concept extraction")
+		return
+	}
+
+	h.logger.Info("queued concept extraction",
+		slog.String("source_id", sourceID), slog.String("job_id", jobID))
 }
 
 func (h *Handler) parseSource(ctx context.Context, p Payload) (parse.Document, error) {

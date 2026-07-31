@@ -15,10 +15,11 @@ const requestTimeout = 30 * time.Second
 // Routes bundles the handlers the API serves. Nil handlers are skipped, which
 // lets tests build a router with only the pieces they exercise.
 type Routes struct {
-	Checker *Checker
-	Sources *SourceHandler
-	Search  *SearchHandler
-	Stream  *StreamHandler
+	Checker  *Checker
+	Sources  *SourceHandler
+	Search   *SearchHandler
+	Stream   *StreamHandler
+	Concepts *ConceptHandler
 }
 
 // NewRouter builds the API router with the standard middleware stack.
@@ -52,6 +53,11 @@ func NewRouter(routes Routes, corsOrigin string, logger *slog.Logger) *chi.Mux {
 				timed.Get("/sources", routes.Sources.List())
 				timed.Get("/sources/{id}/file", routes.Sources.File())
 				timed.Delete("/sources/{id}", routes.Sources.Delete())
+			}
+			if routes.Concepts != nil {
+				timed.Get("/concepts", routes.Concepts.List())
+				timed.Get("/concepts/graph", routes.Concepts.Graph())
+				timed.Get("/concepts/{slug}", routes.Concepts.Get())
 			}
 			if routes.Search != nil {
 				// Embedding the query needs a round trip to Ollama, which can

@@ -31,6 +31,7 @@ type Event struct {
 	Progress int    `json:"progress"`
 	SourceID string `json:"source_id,omitempty"`
 	Chunks   int    `json:"chunks,omitempty"`
+	Concepts int    `json:"concepts,omitempty"`
 	Error    string `json:"error,omitempty"`
 }
 

@@ -29,7 +29,7 @@ type Checker struct {
 }
 
 type dependencyStatus struct {
-	Status string `json:"status"`          // "ok" or "error"
+	Status string `json:"status"` // "ok" or "error"
 	Detail string `json:"detail,omitempty"`
 }
 

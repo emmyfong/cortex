@@ -87,6 +87,10 @@ func run() error {
 			DefaultK: cfg.SearchDefaultK,
 			MaxK:     cfg.SearchMaxK,
 		},
+		Concepts: &httpx.ConceptHandler{
+			Store:  st,
+			Logger: logger,
+		},
 		Stream: &httpx.StreamHandler{
 			Store:      st,
 			Subscriber: subscriber,

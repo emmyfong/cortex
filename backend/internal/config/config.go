@@ -23,10 +23,14 @@ import (
 const maxDotenvSearchDepth = 4
 
 type Config struct {
-	DatabaseURL      string `env:"DATABASE_URL,required"`
-	RedisAddr        string `env:"REDIS_ADDR,required"`
-	OllamaURL        string `env:"OLLAMA_URL,required"`
-	EmbeddingModel   string `env:"EMBEDDING_MODEL" envDefault:"nomic-embed-text"`
+	DatabaseURL    string `env:"DATABASE_URL,required"`
+	RedisAddr      string `env:"REDIS_ADDR,required"`
+	OllamaURL      string `env:"OLLAMA_URL,required"`
+	EmbeddingModel string `env:"EMBEDDING_MODEL" envDefault:"nomic-embed-text"`
+
+	// ConceptModel extracts graph concepts. A local instruct model keeps this
+	// free; it must support structured (JSON schema) output.
+	ConceptModel     string `env:"CONCEPT_MODEL" envDefault:"llama3.1:8b"`
 	APIPort          int    `env:"API_PORT" envDefault:"8080"`
 	WorkerHealthPort int    `env:"WORKER_HEALTH_PORT" envDefault:"8081"`
 	LogLevel         string `env:"LOG_LEVEL" envDefault:"info"`
@@ -172,6 +176,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("redis_addr", c.RedisAddr),
 		slog.String("ollama_url", c.OllamaURL),
 		slog.String("embedding_model", c.EmbeddingModel),
+		slog.String("concept_model", c.ConceptModel),
 		slog.Int("api_port", c.APIPort),
 		slog.Int("worker_health_port", c.WorkerHealthPort),
 		slog.String("log_level", c.LogLevel),

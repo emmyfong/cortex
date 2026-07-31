@@ -21,6 +21,7 @@ import (
 	"github.com/emmyf/cortex/backend/internal/db"
 	"github.com/emmyf/cortex/backend/internal/embed"
 	"github.com/emmyf/cortex/backend/internal/events"
+	"github.com/emmyf/cortex/backend/internal/extract"
 	"github.com/emmyf/cortex/backend/internal/httpx"
 	"github.com/emmyf/cortex/backend/internal/ingest"
 	"github.com/emmyf/cortex/backend/internal/logging"
@@ -98,9 +99,17 @@ func run() error {
 		return fmt.Errorf("open blob store: %w", err)
 	}
 
+	// The worker both consumes and produces: finishing an ingest enqueues the
+	// follow-up concept extraction.
+	queueClient := queue.NewClient(cfg.RedisAddr)
+	defer queueClient.Close()
+
+	st := store.New(pool)
+
 	handler := ingest.NewHandler(
-		store.New(pool),
+		st,
 		blobs,
+		queueClient,
 		parse.NewWebParser(cfg.MaxFetchBytes),
 		pdfParser,
 		embed.New(cfg.OllamaURL, cfg.EmbeddingModel),
@@ -111,7 +120,16 @@ func run() error {
 
 	srv := queue.NewServer(cfg.RedisAddr)
 	mux := queue.NewMux()
+	conceptHandler := ingest.NewConceptHandler(
+		st,
+		extract.New(cfg.OllamaURL, cfg.ConceptModel),
+		embed.New(cfg.OllamaURL, cfg.EmbeddingModel),
+		publisher,
+		logger,
+	)
+
 	mux.HandleFunc(ingest.TypeIngestSource, handler.ProcessTask)
+	mux.HandleFunc(ingest.TypeExtractConcepts, conceptHandler.ProcessTask)
 
 	runErr := make(chan error, 1)
 	go func() {

@@ -48,6 +48,34 @@ func (s *Store) ReplaceChunks(ctx context.Context, sourceID string, chunks []chu
 	return nil
 }
 
+// StoredChunk is a persisted passage, as needed by concept extraction.
+type StoredChunk struct {
+	ID          string
+	Content     string
+	HeadingPath string
+}
+
+// ListChunksForSource returns a source's passages in document order.
+func (s *Store) ListChunksForSource(ctx context.Context, sourceID string) ([]StoredChunk, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, content, COALESCE(heading_path, '')
+		 FROM chunks WHERE source_id = $1 ORDER BY chunk_index`, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("list chunks for source: %w", err)
+	}
+	defer rows.Close()
+
+	var chunks []StoredChunk
+	for rows.Next() {
+		var c StoredChunk
+		if err := rows.Scan(&c.ID, &c.Content, &c.HeadingPath); err != nil {
+			return nil, fmt.Errorf("scan chunk: %w", err)
+		}
+		chunks = append(chunks, c)
+	}
+	return chunks, rows.Err()
+}
+
 // CountChunks reports how many chunks a source has.
 func (s *Store) CountChunks(ctx context.Context, sourceID string) (int, error) {
 	var count int

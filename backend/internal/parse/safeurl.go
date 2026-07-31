@@ -67,7 +67,7 @@ func isBlockedIP(ip net.IP) bool {
 	case ip.IsLoopback(),
 		ip.IsPrivate(),
 		ip.IsUnspecified(),
-		ip.IsLinkLocalUnicast(),  // includes 169.254.169.254, the cloud metadata endpoint
+		ip.IsLinkLocalUnicast(), // includes 169.254.169.254, the cloud metadata endpoint
 		ip.IsLinkLocalMulticast(),
 		ip.IsInterfaceLocalMulticast(),
 		ip.IsMulticast():

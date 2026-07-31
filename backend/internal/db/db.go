@@ -19,9 +19,9 @@ import (
 var migrationsFS embed.FS
 
 const (
-	connectTimeout = 10 * time.Second
-	maxConns       = 10
-	minConns       = 1
+	connectTimeout  = 10 * time.Second
+	maxConns        = 10
+	minConns        = 1
 	maxConnLifetime = time.Hour
 )
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { IngestPanel } from "@/components/IngestPanel";
 import { SearchPanel } from "@/components/SearchPanel";
@@ -56,7 +57,15 @@ export default function Workspace() {
             Local-first knowledge graph and semantic search
           </p>
         </div>
-        <HealthBadge readiness={readiness} apiReachable={apiReachable} />
+        <div className="flex items-center gap-4">
+          <Link
+            href="/graph"
+            className="font-mono text-xs text-neutral-500 underline underline-offset-4 hover:text-neutral-900 dark:hover:text-neutral-100"
+          >
+            concept graph →
+          </Link>
+          <HealthBadge readiness={readiness} apiReachable={apiReachable} />
+        </div>
       </header>
 
       {!apiReachable && (

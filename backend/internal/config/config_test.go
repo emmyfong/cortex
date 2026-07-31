@@ -55,9 +55,9 @@ func TestConfigNeverExposesPasswordWhenFormatted(t *testing.T) {
 	}
 
 	renderings := map[string]string{
-		"String()":                cfg.String(),
-		"LogValue()":              cfg.LogValue().String(),
-		"RedactedDatabaseURL()":   cfg.RedactedDatabaseURL(),
+		"String()":              cfg.String(),
+		"LogValue()":            cfg.LogValue().String(),
+		"RedactedDatabaseURL()": cfg.RedactedDatabaseURL(),
 	}
 
 	for name, rendered := range renderings {

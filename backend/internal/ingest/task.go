@@ -8,8 +8,46 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-// TypeIngestSource is the asynq task type for a document ingestion.
-const TypeIngestSource = "source:ingest"
+// Task types handled by the worker.
+const (
+	// TypeIngestSource parses, chunks, embeds, and stores a document.
+	TypeIngestSource = "source:ingest"
+
+	// TypeExtractConcepts builds graph nodes and edges from a stored document.
+	//
+	// Deliberately a separate task rather than a step inside ingestion: concept
+	// extraction is the slowest and least reliable stage, and folding it into
+	// ingestion would mean an LLM failure discards chunks and embeddings that
+	// were already computed correctly. Split this way, search works as soon as
+	// ingestion finishes and extraction retries on its own.
+	TypeExtractConcepts = "concepts:extract"
+)
+
+// ExtractPayload identifies the document to build graph structure from.
+type ExtractPayload struct {
+	JobID    string `json:"job_id"`
+	SourceID string `json:"source_id"`
+}
+
+// NewExtractTask builds the queue task for concept extraction.
+func NewExtractTask(p ExtractPayload) (*asynq.Task, error) {
+	encoded, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("encode extract payload: %w", err)
+	}
+	return asynq.NewTask(TypeExtractConcepts, encoded), nil
+}
+
+func decodeExtractPayload(data []byte) (ExtractPayload, error) {
+	var p ExtractPayload
+	if err := json.Unmarshal(data, &p); err != nil {
+		return ExtractPayload{}, fmt.Errorf("decode extract payload: %w", err)
+	}
+	if p.JobID == "" || p.SourceID == "" {
+		return ExtractPayload{}, fmt.Errorf("extract payload missing job_id or source_id")
+	}
+	return p, nil
+}
 
 // Payload carries everything the worker needs to process one source.
 type Payload struct {

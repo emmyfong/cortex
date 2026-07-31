@@ -48,6 +48,62 @@ export interface SearchResponse {
   results: SearchResult[];
 }
 
+export interface Concept {
+  id: string;
+  name: string;
+  slug: string;
+  summary: string;
+  connection_count: number;
+  mention_count?: number;
+}
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  slug: string;
+  summary: string;
+  connection_count: number;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  summary?: string;
+}
+
+export interface ConceptGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface ConceptMention {
+  chunk_id: string;
+  content: string;
+  heading_path?: string;
+  source_id: string;
+  source_title: string;
+  source_type: string;
+  source_url?: string;
+}
+
+export interface ConceptDetail {
+  concept: Concept;
+  mentions: ConceptMention[];
+  related: Concept[];
+}
+
+export function loadGraph(limit = 150): Promise<ConceptGraph> {
+  return request<ConceptGraph>(`/api/v1/concepts/graph?limit=${limit}`);
+}
+
+export function loadConcept(slug: string): Promise<ConceptDetail> {
+  return request<ConceptDetail>(`/api/v1/concepts/${encodeURIComponent(slug)}`);
+}
+
+export function listConcepts(): Promise<{ concepts: Concept[] }> {
+  return request<{ concepts: Concept[] }>("/api/v1/concepts");
+}
+
 export type JobEventType = "status" | "complete" | "failed";
 
 export interface JobEvent {
